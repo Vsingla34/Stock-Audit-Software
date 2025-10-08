@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useUser, UserProfile } from "@/context/UserContext"; // Assuming UserProfile is exported
+import { useUser, UserProfile } from "@/context/UserContext";
 import { useInventory } from "@/context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,22 +33,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Navigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Users, UserRound, Building, Edit, Trash } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast"; // Corrected hook path
+import { useToast } from "@/components/ui/use-toast";
 
-// Define a default state structure for the form
 const initialFormData = {
   password: "",
   email: "",
   name: "",
   role: "auditor" as "admin" | "auditor" | "client",
-  companyId: "",
   assignedLocations: [] as string[],
-  assignedCompanies: [] as string[],
 };
 
 const UserManagement = () => {
-  const { currentUser, users, registerUser, updateUser, deleteUser, hasPermission } = useUser();
-  const { locations, companies } = useInventory(); // Assuming companies comes from this context
+  const { currentUser, users, createUser, updateUser, deleteUser, hasPermission } = useUser();
+  const { locations } = useInventory(); // Removed 'companies'
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -57,7 +54,6 @@ const UserManagement = () => {
   
   const [formData, setFormData] = useState(initialFormData);
 
-  // If the user doesn't have permission, redirect them.
   if (!hasPermission("manageUsers")) {
     return <Navigate to="/" replace />;
   }
@@ -79,27 +75,15 @@ const UserManagement = () => {
         : [...prev.assignedLocations, locationId]
     }));
   };
-  
-  // FIX: Added missing handler for company toggling
-  const handleCompanyToggle = (companyId: string) => {
-    setFormData(prev => ({
-        ...prev,
-        assignedCompanies: prev.assignedCompanies.includes(companyId)
-            ? prev.assignedCompanies.filter(id => id !== companyId)
-            : [...prev.assignedCompanies, companyId]
-    }));
-  };
 
   const handleAddUser = async () => {
     try {
-      await registerUser(
+      await createUser(
         {
           email: formData.email,
           name: formData.name,
           role: formData.role,
           assignedLocations: formData.assignedLocations,
-          assignedCompanies: formData.assignedCompanies,
-          companyId: formData.companyId
         },
         formData.password
       );
@@ -109,7 +93,7 @@ const UserManagement = () => {
         description: `${formData.name} has been added as a ${formData.role}.`,
       });
       
-      setFormData(initialFormData); // Reset form
+      setFormData(initialFormData);
       setIsAddUserOpen(false);
     } catch (error: any) {
       toast({
@@ -129,8 +113,6 @@ const UserManagement = () => {
         email: formData.email,
         role: formData.role,
         assignedLocations: formData.assignedLocations,
-        assignedCompanies: formData.assignedCompanies,
-        companyId: formData.role === "client" ? formData.companyId : undefined,
       };
       
       await updateUser(updatedProfile);
@@ -178,9 +160,7 @@ const UserManagement = () => {
       email: user.email,
       role: user.role,
       assignedLocations: user.assignedLocations || [],
-      assignedCompanies: user.assignedCompanies || [],
-      companyId: user.companyId || "",
-      password: "" // Password field should be empty for security
+      password: ""
     });
     setIsEditUserOpen(true);
   };
@@ -192,8 +172,6 @@ const UserManagement = () => {
 
   return (
     <AppLayout>
-        {/* The JSX from your file seems okay, so I am keeping it as is. The main issues were in the logic. */}
-        {/* I've only made minor changes like fixing handler names and ensuring variables exist. */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -212,7 +190,6 @@ const UserManagement = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                  {/* Form fields for Add User */}
                   <div className="grid grid-cols-4 items-center gap-4">
                     <label htmlFor="name" className="text-right text-sm">Name</label>
                     <Input id="name" name="name" value={formData.name} onChange={handleInputChange} className="col-span-3" />
@@ -238,21 +215,6 @@ const UserManagement = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  {/*FIX: Check if companies exists before mapping*/}
-                  {(formData.role === "auditor" || formData.role === "client") && companies && (
-                    <div className="grid grid-cols-4 gap-4">
-                        <label className="text-right text-sm">Companies</label>
-                        <div className="col-span-3 space-y-2">
-                            {companies.map(company => (
-                                <div key={company.id} className="flex items-center space-x-2">
-                                    <Checkbox id={`company-${company.id}`} checked={formData.assignedCompanies.includes(company.id)} onCheckedChange={() => handleCompanyToggle(company.id)} />
-                                    <label htmlFor={`company-${company.id}`} className="text-sm">{company.name}</label>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                  )}
-                  {/*FIX: Check if locations exists before mapping*/}
                   {(formData.role === "auditor" || formData.role === "client") && locations && (
                      <div className="grid grid-cols-4 gap-4">
                         <label className="text-right text-sm">Locations</label>
@@ -275,7 +237,6 @@ const UserManagement = () => {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-            {/* Stat Cards */}
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center gap-2"><UserRound className="h-4 w-4" /><span>Admins</span></CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{users.filter(user => user.role === 'admin').length}</div></CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4" /><span>Auditors</span></CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{users.filter(user => user.role === 'auditor').length}</div></CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center gap-2"><Building className="h-4 w-4" /><span>Clients</span></CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{users.filter(user => user.role === 'client').length}</div></CardContent></Card>
@@ -324,7 +285,6 @@ const UserManagement = () => {
         </Card>
       </div>
 
-      {/* Edit User Dialog */}
       <Dialog open={isEditUserOpen} onOpenChange={setIsEditUserOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -332,7 +292,6 @@ const UserManagement = () => {
             <DialogDescription>Update user information and permissions.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-             {/* Form fields for Edit User */}
              <div className="grid grid-cols-4 items-center gap-4">
                 <label htmlFor="edit-name" className="text-right text-sm">Name</label>
                 <Input id="edit-name" name="name" value={formData.name} onChange={handleInputChange} className="col-span-3" />
@@ -352,19 +311,6 @@ const UserManagement = () => {
                     </SelectContent>
                 </Select>
             </div>
-            {(formData.role === "auditor" || formData.role === "client") && companies && (
-                <div className="grid grid-cols-4 gap-4">
-                    <label className="text-right text-sm">Companies</label>
-                    <div className="col-span-3 space-y-2">
-                        {companies.map(company => (
-                            <div key={company.id} className="flex items-center space-x-2">
-                                <Checkbox id={`edit-company-${company.id}`} checked={formData.assignedCompanies.includes(company.id)} onCheckedChange={() => handleCompanyToggle(company.id)} />
-                                <label htmlFor={`edit-company-${company.id}`} className="text-sm">{company.name}</label>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
             {(formData.role === "auditor" || formData.role === "client") && locations && (
                 <div className="grid grid-cols-4 gap-4">
                     <label className="text-right text-sm">Locations</label>
@@ -385,7 +331,6 @@ const UserManagement = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -405,4 +350,3 @@ const UserManagement = () => {
 };
 
 export default UserManagement;
-

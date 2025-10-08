@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,16 +9,15 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast"; // Corrected import
+import { useToast } from "@/components/ui/use-toast";
 import { useUser } from "@/context/UserContext";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false); // Loading state for the button
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useUser();
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -28,21 +26,16 @@ export default function LoginForm() {
     setError("");
 
     try {
-      await login(email, password); // Await the login function call
-
+      await login(email, password);
       toast({
         title: "Login successful",
-        description: "Welcome back to Stock Audit Vision",
+        description: "Welcome back!",
       });
-      navigate("/");
     } catch (error: any) {
-      setError(
-        error.message || "Invalid email or password. Please try again."
-      );
+      setError(error.message || "Invalid credentials.");
       toast({
         title: "Login failed",
-        description:
-          error.message || "Invalid email or password. Please try again.",
+        description: error.message || "Invalid credentials.",
         variant: "destructive",
       });
     } finally {

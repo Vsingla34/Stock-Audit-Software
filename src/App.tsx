@@ -32,7 +32,7 @@ const ProtectedRoute = ({ children, requiredPermission = null }: { children: Rea
 };
 
 function App() {
-  const { loading } = useUser();
+  const { loading, isAuthenticated } = useUser();
 
   if (loading) {
     return <FullPageLoader />;
@@ -40,7 +40,10 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
       <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
       <Route path="/scanner" element={<ProtectedRoute requiredPermission="conductAudits"><Scanner /></ProtectedRoute>} />
       <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />

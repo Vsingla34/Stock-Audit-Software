@@ -1,129 +1,186 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
-// This interface was incomplete in previous versions. This is from your files.
+// User profile structure from your database
 export interface UserProfile {
   id: string;
   email: string;
-  role: "admin" | "auditor" | "client";
   name: string;
-  companyId?: string;
+  role: 'admin' | 'auditor' | 'client';
   assignedLocations?: string[];
 }
 
+// Defines what the context will provide
 interface UserContextType {
   currentUser: UserProfile | null;
-  users: UserProfile[];
   isAuthenticated: boolean;
+  users: UserProfile[];
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
-  registerUser: (user: Omit<UserProfile, "id">, password: string) => Promise<void>;
-  updateUser: (user: UserProfile) => Promise<void>;
-  deleteUser: (id: string) => Promise<void>;
-  assignLocationToUser: (userId: string, locationId: string) => Promise<void>;
-  removeLocationFromUser: (userId: string, locationId: string) => Promise<void>;
+  createUser: (userData: Omit<UserProfile, 'id'>, pass: string) => Promise<void>;
+  updateUser: (profileData: UserProfile) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   hasPermission: (permission: string) => boolean;
-  getUsersForLocation: (locationId: string) => UserProfile[];
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<UserProfile[]>([]);
+export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAllUsers = useCallback(async (userRole: string | undefined) => {
+    if (userRole !== 'admin') {
+      setUsers([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase.from('user_profiles').select('*');
+      if (error) throw error;
+      setUsers(data as UserProfile[]);
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+    }
+  }, []);
 
   useEffect(() => {
-    // This function now handles getting the user AND their profile in one go.
-    const fetchUserAndProfile = async () => {
-      // 1. Get the current user session from Supabase
-      const { data: { user } } = await supabase.auth.getUser();
+    const fetchSession = async () => {
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
 
       if (user) {
-        // 2. If a user exists, fetch their profile from your 'user_profiles' table
-        const { data: profile, error } = await supabase
+        const { data: profile } = await supabase
           .from("user_profiles")
           .select("*")
           .eq("id", user.id)
           .single();
-
-        if (error) {
-          // If profile fetch fails, it might be a stale session. Log out.
-          console.error("Error fetching profile, logging out:", error);
+        
+        if (profile) {
+          setCurrentUser(profile as UserProfile);
+          setIsAuthenticated(true);
+          await fetchAllUsers(profile.role);
+        } else {
           await supabase.auth.signOut();
           setCurrentUser(null);
           setIsAuthenticated(false);
-        } else if (profile) {
-          // 3. If profile is found, set user state
-          setCurrentUser(profile);
-          setIsAuthenticated(true);
         }
       } else {
-        // No user session found
         setCurrentUser(null);
         setIsAuthenticated(false);
       }
-      // 4. IMPORTANT: Always stop loading after the check is complete.
       setLoading(false);
     };
 
-    // Run the check on initial load
-    fetchUserAndProfile();
+    fetchSession();
 
-    // Listen for any future changes in authentication state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        // When auth state changes, re-run the check to get the latest user and profile.
-        // This handles login, logout, and token refresh events gracefully.
-        fetchUserAndProfile();
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          fetchSession();
+        }
+        if (event === 'SIGNED_OUT') {
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+          setUsers([]);
+          setLoading(false);
+        }
       }
     );
 
-    // Cleanup subscription on unmount
     return () => {
-      subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchAllUsers]);
 
-  const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const login = async (email: string, pass: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
-    // No need to set user state here, the onAuthStateChange listener will handle it.
   };
 
   const logout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    // No need to set user state here, the onAuthStateChange listener will handle it.
+    await supabase.auth.signOut();
   };
 
-  // --- Placeholder functions from your original file ---
-  const fetchUsers = async () => {};
-  const registerUser = async (userData: Omit<UserProfile, "id">, password: string) => {};
-  const updateUser = async (updatedUser: UserProfile) => {};
-  const deleteUser = async (userId: string) => {};
-  const assignLocationToUser = async (userId: string, locationId: string) => {};
-  const removeLocationFromUser = async (userId: string, locationId: string) => {};
-  
-  const hasPermission = (permission: string): boolean => {
+  // *** THIS IS THE UPDATED FUNCTION ***
+  const createUser = async (userData: Omit<UserProfile, 'id'>, pass: string) => {
+    // Step 1: Create the user in Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: userData.email,
+      password: pass,
+    });
+
+    if (authError) throw new Error(authError.message);
+    if (!authData.user) throw new Error("User not created successfully.");
+
+    // Step 2: Call the RPC function to create the profile
+    const { error: rpcError } = await supabase.rpc('create_user_profile', {
+      user_id: authData.user.id,
+      email: userData.email,
+      name: userData.name,
+      role: userData.role,
+      assigned_locations: userData.assignedLocations || [],
+    });
+
+    if (rpcError) {
+      // If profile creation fails, clean up the auth user
+      // This part requires admin privileges on the client, which is fine for an admin panel
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      throw new Error(rpcError.message);
+    }
+    
+    // Refresh the list of users after successful creation
+    await fetchAllUsers(currentUser?.role);
+  };
+
+  const updateUser = async (profileData: UserProfile) => {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+          name: profileData.name,
+          role: profileData.role,
+          assigned_locations: profileData.assignedLocations,
+       })
+      .eq('id', profileData.id);
+    if (error) throw error;
+    await fetchAllUsers(currentUser?.role);
+  };
+
+  const deleteUser = async (userId: string) => {
+    // Note: this should ideally be an RPC call as well for security
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (error) throw error;
+    await fetchAllUsers(currentUser?.role);
+  };
+
+  const hasPermission = (permission: string) => {
     if (!currentUser) return false;
     switch (permission) {
-      case "viewAllLocations": return currentUser.role === "admin";
-      case "manageUsers": return currentUser.role === "admin";
-      case "viewReports": return ["admin", "client"].includes(currentUser.role);
-      case "conductAudits": return ["admin", "auditor"].includes(currentUser.role);
+      case 'manageUsers': return currentUser.role === 'admin';
+      case 'conductAudits': return ['admin', 'auditor'].includes(currentUser.role);
       default: return false;
     }
   };
-  
-  const getUsersForLocation = (locationId: string): UserProfile[] => {
-    return []; // Placeholder
-  };
 
   return (
-    <UserContext.Provider value={{ currentUser, users, isAuthenticated, loading, login, logout, registerUser, updateUser, deleteUser, assignLocationToUser, removeLocationFromUser, hasPermission, getUsersForLocation }}>
+    <UserContext.Provider
+      value={{
+        currentUser,
+        isAuthenticated,
+        users,
+        loading,
+        login,
+        logout,
+        createUser,
+        updateUser,
+        deleteUser,
+        hasPermission,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );
