@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 // User profile structure from your database
 export interface UserProfile {
@@ -39,9 +38,20 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     try {
-      const { data, error } = await supabase.from('user_profiles').select('*');
+      // FIX: Be explicit with the columns you select.
+      const { data, error } = await supabase.from('user_profiles').select('id, email, name, role, assigned_locations');
       if (error) throw error;
-      setUsers(data as UserProfile[]);
+
+      const mappedUsers = data.map(user => ({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        assignedLocations: user.assigned_locations,
+      }));
+
+      setUsers(mappedUsers as UserProfile[]);
+
     } catch (error) {
       console.error("Error fetching all users:", error);
     }
@@ -54,16 +64,25 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       const user = session?.user;
 
       if (user) {
+        // FIX: Be explicit with the columns you select.
         const { data: profile } = await supabase
           .from("user_profiles")
-          .select("*")
+          .select("id, email, name, role, assigned_locations")
           .eq("id", user.id)
           .single();
         
         if (profile) {
-          setCurrentUser(profile as UserProfile);
+          const mappedProfile: UserProfile = {
+            id: profile.id,
+            email: profile.email,
+            name: profile.name,
+            role: profile.role,
+            assignedLocations: profile.assigned_locations,
+          };
+          
+          setCurrentUser(mappedProfile);
           setIsAuthenticated(true);
-          await fetchAllUsers(profile.role);
+          await fetchAllUsers(mappedProfile.role);
         } else {
           await supabase.auth.signOut();
           setCurrentUser(null);
@@ -106,9 +125,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     await supabase.auth.signOut();
   };
 
-  // *** THIS IS THE UPDATED FUNCTION ***
   const createUser = async (userData: Omit<UserProfile, 'id'>, pass: string) => {
-    // Step 1: Create the user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: userData.email,
       password: pass,
@@ -117,7 +134,6 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     if (authError) throw new Error(authError.message);
     if (!authData.user) throw new Error("User not created successfully.");
 
-    // Step 2: Call the RPC function to create the profile
     const { error: rpcError } = await supabase.rpc('create_user_profile', {
       user_id: authData.user.id,
       email: userData.email,
@@ -127,31 +143,50 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     if (rpcError) {
-      // If profile creation fails, clean up the auth user
-      // This part requires admin privileges on the client, which is fine for an admin panel
+      // @ts-ignore
       await supabase.auth.admin.deleteUser(authData.user.id);
       throw new Error(rpcError.message);
     }
     
-    // Refresh the list of users after successful creation
     await fetchAllUsers(currentUser?.role);
   };
 
   const updateUser = async (profileData: UserProfile) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('user_profiles')
       .update({
-          name: profileData.name,
-          role: profileData.role,
-          assigned_locations: profileData.assignedLocations,
-       })
-      .eq('id', profileData.id);
+        name: profileData.name,
+        role: profileData.role,
+        assigned_locations: profileData.assignedLocations,
+      })
+      .eq('id', profileData.id)
+      .select()
+      .single();
+
     if (error) throw error;
-    await fetchAllUsers(currentUser?.role);
+    if (!data) throw new Error("Failed to retrieve updated user profile.");
+
+    const updatedMappedProfile: UserProfile = {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role,
+      assignedLocations: data.assigned_locations,
+    };
+
+    setUsers(prevUsers => 
+      prevUsers.map(user => 
+        user.id === updatedMappedProfile.id ? updatedMappedProfile : user
+      )
+    );
+
+    if (currentUser?.id === updatedMappedProfile.id) {
+      setCurrentUser(updatedMappedProfile);
+    }
   };
 
   const deleteUser = async (userId: string) => {
-    // Note: this should ideally be an RPC call as well for security
+    // @ts-ignore
     const { error } = await supabase.auth.admin.deleteUser(userId);
     if (error) throw error;
     await fetchAllUsers(currentUser?.role);
@@ -186,7 +221,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export const useUser = () => {
+export const useUser = () => {``
   const context = useContext(UserContext);
   if (context === undefined) {
     throw new Error("useUser must be used within a UserProvider");
