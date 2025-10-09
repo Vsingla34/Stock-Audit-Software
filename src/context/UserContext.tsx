@@ -183,19 +183,22 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // *** THIS IS THE UPDATED FUNCTION ***
   const deleteUser = async (userId: string) => {
-    const { error } = await supabase.rpc('delete_user', {
+    console.log('Attempting to delete user:', userId);
+    
+    const { data, error } = await supabase.rpc('delete_user', {
       user_id: userId
     });
 
+    console.log('RPC response - data:', data, 'error:', error);
+
     if (error) {
-      // If the database returns an error, show it to the user.
+      console.error('Delete user error:', error);
       throw new Error(error.message);
     }
 
-    // Only update the UI after the database confirms the deletion was successful.
-    await fetchAllUsers(currentUser?.role);
+    // Only update the local state after successful deletion from database
+    setUsers(prevUsers => prevUsers.filter(user => user.id !== userId));
   };
 
   const hasPermission = (permission: string) => {
