@@ -51,7 +51,7 @@ function App() {
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/locations" element={<ProtectedRoute><LocationManagement /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute requiredPermission="viewAllLocations"><AdminOverview /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute requiredPermission="manageUsers"><AdminOverview /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute requiredPermission="manageUsers"><UserManagement /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/questionnaire" element={<ProtectedRoute><Questionnaire /></ProtectedRoute>} />

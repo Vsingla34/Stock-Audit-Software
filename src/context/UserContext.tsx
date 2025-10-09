@@ -38,7 +38,6 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     try {
-      // FIX: Be explicit with the columns you select.
       const { data, error } = await supabase.from('user_profiles').select('id, email, name, role, assigned_locations');
       if (error) throw error;
 
@@ -64,7 +63,6 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       const user = session?.user;
 
       if (user) {
-        // FIX: Be explicit with the columns you select.
         const { data: profile } = await supabase
           .from("user_profiles")
           .select("id, email, name, role, assigned_locations")
@@ -185,10 +183,18 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // *** THIS IS THE UPDATED FUNCTION ***
   const deleteUser = async (userId: string) => {
-    // @ts-ignore
-    const { error } = await supabase.auth.admin.deleteUser(userId);
-    if (error) throw error;
+    const { error } = await supabase.rpc('delete_user', {
+      user_id: userId
+    });
+
+    if (error) {
+      // If the database returns an error, show it to the user.
+      throw new Error(error.message);
+    }
+
+    // Only update the UI after the database confirms the deletion was successful.
     await fetchAllUsers(currentUser?.role);
   };
 
@@ -221,7 +227,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export const useUser = () => {``
+export const useUser = () => {
   const context = useContext(UserContext);
   if (context === undefined) {
     throw new Error("useUser must be used within a UserProvider");
